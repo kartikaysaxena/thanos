@@ -102,6 +102,7 @@ type ruleConfig struct {
 	outageTolerance   time.Duration
 	forGracePeriod    time.Duration
 	ruleFiles         []string
+	maxSourceResolution string
 	objStoreConfig    *extflag.PathOrContent
 	dataDir           string
 	lset              labels.Labels
@@ -141,6 +142,7 @@ func registerRule(app *extkingpin.App) {
 	walCompression := cmd.Flag("tsdb.wal-compression", "Compress the tsdb WAL.").Default("true").Bool()
 
 	cmd.Flag("data-dir", "data directory").Default("data/").StringVar(&conf.dataDir)
+	cmd.Flag("max-source-resolution", "Max resolution in we want to use for data we query for").StringVar(&conf.maxSourceResolution)
 	cmd.Flag("rule-file", "Rule files that should be used by rule manager. Can be in glob format (repeated). Note that rules are not automatically detected, use SIGHUP or do HTTP POST /-/reload to re-read them.").
 		Default("rules/").StringsVar(&conf.ruleFiles)
 	cmd.Flag("resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
@@ -628,7 +630,7 @@ func runRule(
 				OutageTolerance: conf.outageTolerance,
 				ForGracePeriod:  conf.forGracePeriod,
 			},
-			queryFuncCreator(logger, queryClients, promClients, grpcEndpointSet, metrics.duplicatedQuery, metrics.ruleEvalWarnings, conf.query.httpMethod, conf.query.doNotAddThanosParams),
+			queryFuncCreator(logger, queryClients, promClients, grpcEndpointSet, metrics.duplicatedQuery, metrics.ruleEvalWarnings, conf.query.httpMethod, conf.query.doNotAddThanosParams, conf.maxSourceResolution),
 			conf.lset,
 			// In our case the querying URL is the external URL because in Prometheus
 			// --web.external-url points to it i.e. it points at something where the user
@@ -913,6 +915,7 @@ func queryFuncCreator(
 	ruleEvalWarnings *prometheus.CounterVec,
 	httpMethod string,
 	doNotAddThanosParams bool,
+	maxSourceResolution string,
 ) func(partialResponseStrategy storepb.PartialResponseStrategy) rules.QueryFunc {
 
 	// queryFunc returns query function that hits the HTTP query API of query peers in randomized order until we get a result
@@ -941,6 +944,7 @@ func queryFuncCreator(
 						PartialResponseStrategy: partialResponseStrategy,
 						Method:                  httpMethod,
 						DoNotAddThanosParams:    doNotAddThanosParams,
+						MaxSourceResolution:     maxSourceResolution,
 					})
 					span.Finish()
 
